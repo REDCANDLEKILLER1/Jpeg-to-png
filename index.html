@@ -266,6 +266,90 @@
   }
   .remove-btn:hover { color: #ff4444; }
 
+  /* ── Resolution Selector ── */
+  .res-section {
+    margin-top: 28px;
+    animation: fadeUp 0.6s 0.1s ease both;
+  }
+
+  .res-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+
+  .res-card {
+    border: 1px solid var(--green-border);
+    border-radius: 3px;
+    padding: 14px 10px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--green-faint);
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .res-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--green);
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform 0.2s;
+    z-index: 0;
+  }
+
+  .res-card:hover { border-color: var(--green); }
+  .res-card:hover::before { transform: scaleY(0.06); }
+
+  .res-card.active {
+    border-color: var(--green);
+    background: rgba(0,255,0,0.14);
+    box-shadow: 0 0 14px rgba(0,255,0,0.2), inset 0 0 10px rgba(0,255,0,0.05);
+  }
+
+  .res-card.active .res-label { color: var(--green); text-shadow: 0 0 8px var(--green-glow); }
+
+  .res-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.05rem;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    display: block;
+    position: relative;
+    z-index: 1;
+    transition: all 0.2s;
+  }
+
+  .res-desc {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    margin-top: 5px;
+    display: block;
+    position: relative;
+    z-index: 1;
+  }
+
+  .res-badge {
+    position: absolute;
+    top: 5px;
+    right: 6px;
+    font-size: 0.5rem;
+    letter-spacing: 0.15em;
+    padding: 2px 5px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    z-index: 1;
+  }
+
+  .res-badge.up   { color: #00ffaa; }
+  .res-badge.down { color: #ffaa00; }
+  .res-badge.orig { color: var(--text-dim); }
+
   /* ── Actions ── */
   .actions {
     display: flex;
@@ -415,7 +499,7 @@
 </head>
 <body>
 
-<div class="corner-deco tl">XRPMANS // v1.0</div>
+<div class="corner-deco tl">XRPMANS // v2.0</div>
 <div class="corner-deco tr">JPG → PNG</div>
 <div class="corner-deco bl">CLIENT-SIDE // SECURE</div>
 <div class="corner-deco br" id="clock"></div>
@@ -424,7 +508,7 @@
 
   <header>
     <div class="logo"><span>XRPMANS</span> IMAGE CONVERTER</div>
-    <div class="tagline">JPEG → PNG · Single &amp; Batch · Instant · Private</div>
+    <div class="tagline">JPEG → PNG · Scale to 1K / 2K / 4K · Single &amp; Batch · Private</div>
     <div class="powered">POWERED BY XMEME</div>
   </header>
 
@@ -434,6 +518,33 @@
     <span class="drop-icon">⬡</span>
     <div class="drop-title">DROP YOUR IMAGES HERE</div>
     <div class="drop-sub">or <strong>click to browse</strong> &nbsp;·&nbsp; JPG / JPEG only &nbsp;·&nbsp; any number of files</div>
+  </div>
+
+  <!-- Resolution Selector -->
+  <div class="res-section">
+    <div class="section-label">OUTPUT RESOLUTION</div>
+    <div class="res-grid">
+      <div class="res-card active" data-res="original">
+        <span class="res-badge orig">ORIG</span>
+        <span class="res-label">ORIG</span>
+        <span class="res-desc">Keep as-is</span>
+      </div>
+      <div class="res-card" data-res="1k">
+        <span class="res-badge down">1K</span>
+        <span class="res-label">1K</span>
+        <span class="res-desc">1024px wide</span>
+      </div>
+      <div class="res-card" data-res="2k">
+        <span class="res-badge up">2K</span>
+        <span class="res-label">2K</span>
+        <span class="res-desc">2048px wide</span>
+      </div>
+      <div class="res-card" data-res="4k">
+        <span class="res-badge up">4K</span>
+        <span class="res-label">4K</span>
+        <span class="res-desc">3840px wide</span>
+      </div>
+    </div>
   </div>
 
   <!-- File Queue -->
@@ -479,8 +590,16 @@
   setInterval(tick, 1000);
 
   // ── State ──
-  let files = []; // {file, id, status}
+  let files = [];
   let idCounter = 0;
+  let selectedRes = 'original'; // 'original' | '1k' | '2k' | '4k'
+
+  const RES_MAP = {
+    'original': null,
+    '1k': 1024,
+    '2k': 2048,
+    '4k': 3840
+  };
 
   const dropZone   = document.getElementById('dropZone');
   const fileInput  = document.getElementById('fileInput');
@@ -495,6 +614,20 @@
   const progressText = document.getElementById('progressText');
   const doneBanner = document.getElementById('doneBanner');
   const doneSubText = document.getElementById('doneSubText');
+
+  // ── Resolution Selector ──
+  document.querySelectorAll('.res-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.res-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      selectedRes = card.dataset.res;
+      // Reset done statuses so they re-convert at new res
+      files.forEach(f => { if (f.status === 'done') f.status = 'waiting'; });
+      renderList();
+      doneBanner.classList.remove('visible');
+      progressWrap.classList.remove('visible');
+    });
+  });
 
   // ── Drag & Drop ──
   dropZone.addEventListener('click', () => fileInput.click());
@@ -636,11 +769,12 @@
       await delay(60);
     }
 
+    const resLabel = selectedRes === 'original' ? 'original size' : selectedRes.toUpperCase();
     const errCount = files.filter(f => f.status === 'error').length;
     doneBanner.classList.add('visible');
     doneSubText.textContent = errCount
       ? `${done - errCount} saved · ${errCount} failed`
-      : `${done} file${done !== 1 ? 's' : ''} converted & downloaded as PNG`;
+      : `${done} file${done !== 1 ? 's' : ''} converted to PNG at ${resLabel}`;
 
     convertBtn.disabled = false;
     clearBtn.disabled   = false;
@@ -649,31 +783,47 @@
 
   function convertFile(file) {
     return new Promise((resolve, reject) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width  = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        URL.revokeObjectURL(url);
-
-        canvas.toBlob(blob => {
-          if (!blob) return reject(new Error('Conversion failed'));
-          const pngName = file.name.replace(/\.jpe?g$/i, '.png');
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = pngName;
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-          resolve();
-        }, 'image/png');
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('File read failed'));
+      reader.onload = (event) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onerror = () => reject(new Error('Image load failed'));
+        img.onload = () => {
+          const targetWidth = RES_MAP[selectedRes];
+          let W = img.naturalWidth;
+          let H = img.naturalHeight;
+          if (targetWidth) {
+            const ratio = H / W;
+            W = targetWidth;
+            H = Math.round(targetWidth * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width  = W;
+          canvas.height = H;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, W, H);
+          try {
+            canvas.toBlob(blob => {
+              if (!blob) return reject(new Error('Conversion failed'));
+              const suffix = selectedRes !== 'original' ? `_${selectedRes}` : '';
+              const pngName = file.name.replace(/\.jpe?g$/i, '') + suffix + '.png';
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = pngName;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+              resolve();
+            }, 'image/png');
+          } catch(e) { reject(e); }
+        };
+        img.src = event.target.result;
       };
-
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Load failed')); };
-      img.src = url;
+      reader.readAsDataURL(file);
     });
   }
 
