@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XRPMANS Image Converter</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #00ff00;
+    --green-dim: #00cc00;
+    --green-faint: rgba(0, 255, 0, 0.08);
+    --green-glow: rgba(0, 255, 0, 0.4);
+    --green-border: rgba(0, 255, 0, 0.25);
+    --bg: #050505;
+    --bg2: #0a0a0a;
+    --text: #00ff00;
+    --text-dim: rgba(0, 255, 0, 0.55);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    cursor: crosshair;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.07) 2px,
+      rgba(0,0,0,0.07) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* Grid background */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,0,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,0,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper {
+    position: relative;
+    z-index: 1;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    margin-bottom: 50px;
+    animation: fadeDown 0.7s ease both;
+  }
+
+  .logo {
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    font-size: clamp(1.6rem, 5vw, 2.8rem);
+    letter-spacing: 0.08em;
+    color: var(--green);
+    text-shadow:
+      0 0 10px var(--green-glow),
+      0 0 30px var(--green-glow),
+      0 0 60px rgba(0,255,0,0.2);
+    line-height: 1.15;
+  }
+
+  .logo span {
+    display: inline-block;
+    animation: pulse 3s ease-in-out infinite;
+  }
+
+  .tagline {
+    margin-top: 10px;
+    font-size: 0.78rem;
+    letter-spacing: 0.25em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  .powered {
+    margin-top: 6px;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    color: var(--green);
+    text-shadow: 0 0 8px var(--green-glow);
+    opacity: 0.9;
+  }
+
+  /* ── Drop Zone ── */
+  .drop-zone {
+    border: 1px solid var(--green-border);
+    border-radius: 4px;
+    padding: 52px 24px;
+    text-align: center;
+    background: var(--green-faint);
+    position: relative;
+    transition: all 0.2s;
+    cursor: pointer;
+    animation: fadeUp 0.7s 0.15s ease both;
+  }
+
+  .drop-zone::before, .drop-zone::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-color: var(--green);
+    border-style: solid;
+    transition: all 0.3s;
+  }
+  .drop-zone::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+  .drop-zone::after  { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+  .drop-zone:hover,
+  .drop-zone.dragging {
+    background: rgba(0,255,0,0.12);
+    border-color: var(--green);
+    box-shadow: 0 0 20px rgba(0,255,0,0.15), inset 0 0 20px rgba(0,255,0,0.05);
+  }
+
+  .drop-zone:hover::before, .drop-zone.dragging::before { width: 28px; height: 28px; }
+  .drop-zone:hover::after,  .drop-zone.dragging::after  { width: 28px; height: 28px; }
+
+  .drop-icon {
+    font-size: 2.8rem;
+    margin-bottom: 16px;
+    display: block;
+    filter: drop-shadow(0 0 8px var(--green-glow));
+    animation: float 4s ease-in-out infinite;
+  }
+
+  .drop-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    margin-bottom: 8px;
+  }
+
+  .drop-sub {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .drop-sub strong {
+    color: var(--green);
+  }
+
+  #fileInput { display: none; }
+
+  /* ── Queue ── */
+  .queue-section {
+    margin-top: 32px;
+    animation: fadeUp 0.5s ease both;
+  }
+
+  .section-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.35em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--green-border);
+  }
+
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .file-list::-webkit-scrollbar { width: 3px; }
+  .file-list::-webkit-scrollbar-track { background: transparent; }
+  .file-list::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 2px; }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--green-border);
+    border-radius: 3px;
+    background: var(--green-faint);
+    font-size: 0.78rem;
+    transition: all 0.2s;
+    animation: slideIn 0.2s ease both;
+  }
+
+  .file-item:hover { background: rgba(0,255,0,0.1); border-color: rgba(0,255,0,0.4); }
+
+  .file-item .fname {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--green);
+  }
+
+  .file-item .fsize {
+    color: var(--text-dim);
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+
+  .file-item .fstatus {
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    min-width: 80px;
+    text-align: right;
+  }
+
+  .fstatus.waiting  { color: var(--text-dim); }
+  .fstatus.done     { color: var(--green); text-shadow: 0 0 6px var(--green-glow); }
+  .fstatus.error    { color: #ff4444; }
+  .fstatus.working  { color: #ffff00; animation: blink 0.7s step-start infinite; }
+
+  .remove-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 2px;
+    transition: color 0.2s;
+    flex-shrink: 0;
+  }
+  .remove-btn:hover { color: #ff4444; }
+
+  /* ── Actions ── */
+  .actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 28px;
+    animation: fadeUp 0.7s 0.25s ease both;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    border: 1px solid var(--green);
+    background: transparent;
+    color: var(--green);
+    padding: 13px 26px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--green);
+    transform: translateX(-100%);
+    transition: transform 0.2s;
+    z-index: -1;
+  }
+
+  .btn:hover { color: #000; text-shadow: none; box-shadow: 0 0 18px var(--green-glow); }
+  .btn:hover::before { transform: translateX(0); }
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+
+  .btn.primary { border-color: var(--green); box-shadow: 0 0 10px rgba(0,255,0,0.15); }
+  .btn.ghost   { border-color: var(--green-border); color: var(--text-dim); }
+  .btn.ghost:hover { border-color: var(--green); color: #000; }
+
+  /* ── Progress bar ── */
+  .progress-wrap {
+    margin-top: 24px;
+    display: none;
+    animation: fadeUp 0.3s ease both;
+  }
+
+  .progress-wrap.visible { display: block; }
+
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    margin-bottom: 7px;
+  }
+
+  .progress-bar-bg {
+    height: 3px;
+    background: rgba(0,255,0,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green-glow);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+
+  /* ── Done banner ── */
+  .done-banner {
+    display: none;
+    margin-top: 28px;
+    border: 1px solid var(--green);
+    border-radius: 3px;
+    padding: 18px 22px;
+    background: rgba(0,255,0,0.06);
+    text-align: center;
+    animation: fadeUp 0.4s ease both;
+  }
+
+  .done-banner.visible { display: block; }
+
+  .done-banner .big {
+    font-family: 'Orbitron', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-shadow: 0 0 12px var(--green-glow);
+    margin-bottom: 6px;
+  }
+
+  .done-banner .sub {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  /* ── Corner decorations ── */
+  .corner-deco {
+    position: fixed;
+    font-size: 0.6rem;
+    color: rgba(0,255,0,0.2);
+    letter-spacing: 0.15em;
+    font-family: 'Share Tech Mono', monospace;
+    z-index: 2;
+  }
+  .corner-deco.tl { top: 16px; left: 20px; }
+  .corner-deco.tr { top: 16px; right: 20px; text-align: right; }
+  .corner-deco.bl { bottom: 16px; left: 20px; }
+  .corner-deco.br { bottom: 16px; right: 20px; text-align: right; }
+
+  /* ── Animations ── */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes pulse {
+    0%, 100% { text-shadow: 0 0 10px var(--green-glow), 0 0 30px var(--green-glow); }
+    50%       { text-shadow: 0 0 20px var(--green-glow), 0 0 60px var(--green-glow), 0 0 100px rgba(0,255,0,0.15); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%       { transform: translateY(-7px); }
+  }
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="corner-deco tl">XRPMANS // v1.0</div>
+<div class="corner-deco tr">JPG → PNG</div>
+<div class="corner-deco bl">CLIENT-SIDE // SECURE</div>
+<div class="corner-deco br" id="clock"></div>
+
+<div class="wrapper">
+
+  <header>
+    <div class="logo"><span>XRPMANS</span> IMAGE CONVERTER</div>
+    <div class="tagline">JPEG → PNG · Single &amp; Batch · Instant · Private</div>
+    <div class="powered">POWERED BY XMEME</div>
+  </header>
+
+  <!-- Drop Zone -->
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" accept=".jpg,.jpeg,image/jpeg" multiple>
+    <span class="drop-icon">⬡</span>
+    <div class="drop-title">DROP YOUR IMAGES HERE</div>
+    <div class="drop-sub">or <strong>click to browse</strong> &nbsp;·&nbsp; JPG / JPEG only &nbsp;·&nbsp; any number of files</div>
+  </div>
+
+  <!-- File Queue -->
+  <div class="queue-section" id="queueSection" style="display:none">
+    <div class="section-label">FILE QUEUE</div>
+    <div class="file-list" id="fileList"></div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-label">
+      <span>CONVERTING</span>
+      <span id="progressText">0 / 0</span>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+  </div>
+
+  <!-- Done Banner -->
+  <div class="done-banner" id="doneBanner">
+    <div class="big">✓ CONVERSION COMPLETE</div>
+    <div class="sub" id="doneSubText">All files downloaded as PNG</div>
+  </div>
+
+  <!-- Actions -->
+  <div class="actions" id="actionsBar" style="display:none">
+    <button class="btn primary" id="convertBtn">⬡ CONVERT &amp; DOWNLOAD</button>
+    <button class="btn ghost" id="addMoreBtn">+ ADD MORE</button>
+    <button class="btn ghost" id="clearBtn">✕ CLEAR ALL</button>
+  </div>
+
+</div>
+
+<script>
+  // ── Clock ──
+  function tick() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      now.toLocaleTimeString('en-US', {hour12: false});
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  // ── State ──
+  let files = []; // {file, id, status}
+  let idCounter = 0;
+
+  const dropZone   = document.getElementById('dropZone');
+  const fileInput  = document.getElementById('fileInput');
+  const fileList   = document.getElementById('fileList');
+  const queueSection = document.getElementById('queueSection');
+  const actionsBar = document.getElementById('actionsBar');
+  const convertBtn = document.getElementById('convertBtn');
+  const clearBtn   = document.getElementById('clearBtn');
+  const addMoreBtn = document.getElementById('addMoreBtn');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFill = document.getElementById('progressFill');
+  const progressText = document.getElementById('progressText');
+  const doneBanner = document.getElementById('doneBanner');
+  const doneSubText = document.getElementById('doneSubText');
+
+  // ── Drag & Drop ──
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('dragging');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragging');
+    const dropped = Array.from(e.dataTransfer.files).filter(isJpeg);
+    addFiles(dropped);
+  });
+
+  fileInput.addEventListener('change', () => {
+    const selected = Array.from(fileInput.files).filter(isJpeg);
+    addFiles(selected);
+    fileInput.value = '';
+  });
+
+  addMoreBtn.addEventListener('click', () => fileInput.click());
+
+  function isJpeg(f) {
+    return f.type === 'image/jpeg' || /\.jpe?g$/i.test(f.name);
+  }
+
+  function fmtSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
+  }
+
+  function addFiles(newFiles) {
+    if (!newFiles.length) return;
+    newFiles.forEach(f => {
+      files.push({ file: f, id: ++idCounter, status: 'waiting' });
+    });
+    renderList();
+    queueSection.style.display = 'block';
+    actionsBar.style.display   = 'flex';
+    doneBanner.classList.remove('visible');
+    progressWrap.classList.remove('visible');
+    resetStatuses();
+  }
+
+  function resetStatuses() {
+    files.forEach(f => { if (f.status !== 'done') f.status = 'waiting'; });
+    renderList();
+  }
+
+  function renderList() {
+    fileList.innerHTML = '';
+    files.forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'file-item';
+      row.id = 'fi-' + entry.id;
+
+      const newName = entry.file.name.replace(/\.jpe?g$/i, '.png');
+
+      row.innerHTML = `
+        <span class="fname" title="${newName}">${newName}</span>
+        <span class="fsize">${fmtSize(entry.file.size)}</span>
+        <span class="fstatus ${entry.status}" id="fs-${entry.id}">${statusLabel(entry.status)}</span>
+        <button class="remove-btn" data-id="${entry.id}" title="Remove">✕</button>
+      `;
+      fileList.appendChild(row);
+    });
+
+    // Remove buttons
+    fileList.querySelectorAll('.remove-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.dataset.id);
+        files = files.filter(f => f.id !== id);
+        renderList();
+        if (!files.length) {
+          queueSection.style.display = 'none';
+          actionsBar.style.display   = 'none';
+          progressWrap.classList.remove('visible');
+          doneBanner.classList.remove('visible');
+        }
+      });
+    });
+  }
+
+  function statusLabel(s) {
+    return { waiting: 'QUEUED', working: 'CONVERTING...', done: '✓ SAVED', error: '✗ ERROR' }[s] || s;
+  }
+
+  function setStatus(id, status) {
+    const entry = files.find(f => f.id === id);
+    if (entry) entry.status = status;
+    const el = document.getElementById('fs-' + id);
+    if (el) {
+      el.className = 'fstatus ' + status;
+      el.textContent = statusLabel(status);
+    }
+  }
+
+  // ── Clear ──
+  clearBtn.addEventListener('click', () => {
+    files = [];
+    fileList.innerHTML = '';
+    queueSection.style.display = 'none';
+    actionsBar.style.display   = 'none';
+    progressWrap.classList.remove('visible');
+    doneBanner.classList.remove('visible');
+  });
+
+  // ── Convert ──
+  convertBtn.addEventListener('click', convertAll);
+
+  async function convertAll() {
+    if (!files.length) return;
+    convertBtn.disabled = true;
+    clearBtn.disabled   = true;
+    addMoreBtn.disabled = true;
+    doneBanner.classList.remove('visible');
+
+    const toConvert = files.filter(f => f.status !== 'done');
+    let done = 0;
+
+    progressWrap.classList.add('visible');
+    progressText.textContent = `0 / ${toConvert.length}`;
+    progressFill.style.width = '0%';
+
+    for (const entry of toConvert) {
+      setStatus(entry.id, 'working');
+      try {
+        await convertFile(entry.file);
+        setStatus(entry.id, 'done');
+      } catch(e) {
+        setStatus(entry.id, 'error');
+      }
+      done++;
+      progressText.textContent = `${done} / ${toConvert.length}`;
+      progressFill.style.width = ((done / toConvert.length) * 100) + '%';
+      await delay(60);
+    }
+
+    const errCount = files.filter(f => f.status === 'error').length;
+    doneBanner.classList.add('visible');
+    doneSubText.textContent = errCount
+      ? `${done - errCount} saved · ${errCount} failed`
+      : `${done} file${done !== 1 ? 's' : ''} converted & downloaded as PNG`;
+
+    convertBtn.disabled = false;
+    clearBtn.disabled   = false;
+    addMoreBtn.disabled = false;
+  }
+
+  function convertFile(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width  = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+
+        canvas.toBlob(blob => {
+          if (!blob) return reject(new Error('Conversion failed'));
+          const pngName = file.name.replace(/\.jpe?g$/i, '.png');
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = pngName;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+          resolve();
+        }, 'image/png');
+      };
+
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Load failed')); };
+      img.src = url;
+    });
+  }
+
+  function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
